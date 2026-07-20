@@ -9,7 +9,7 @@ type ExtraAttributes = {
 
 describe("ALS logger context", () => {
   it("exposes direct and factory logger creation", () => {
-    expect(Object.keys(als)).toEqual(["createLogger", "createLoggerFactory"]);
+    expect(Object.keys(als)).toEqual(["consoleTransport", "createLogger", "createLoggerFactory"]);
   });
 
   it("provides context to downstream code through a stable logger reference", async () => {

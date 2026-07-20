@@ -8,19 +8,22 @@ type ExtraAttributes = {
 };
 
 describe("structured logger", () => {
-  it("writes a structured entry to the matching console method by default", () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const logger = createLogger<ExtraAttributes>({ component: "api" });
+  it.each(["debug", "info", "warn", "error"] as const)(
+    "writes a structured entry to console.%s by default",
+    (level) => {
+      const write = vi.spyOn(console, level).mockImplementation(() => undefined);
+      const logger = createLogger<ExtraAttributes>({ component: "api" });
 
-    logger.info("request handled", { durationMs: 12 });
+      logger[level]("request handled", { durationMs: 12 });
 
-    expect(info).toHaveBeenCalledWith({
-      component: "api",
-      durationMs: 12,
-      message: "request handled",
-    });
-    info.mockRestore();
-  });
+      expect(write).toHaveBeenCalledWith({
+        component: "api",
+        durationMs: 12,
+        message: "request handled",
+      });
+      write.mockRestore();
+    },
+  );
 
   it("allows entries without call attributes", () => {
     const entries: unknown[] = [];

@@ -2,6 +2,19 @@
 
 A small, typed structured logger for modern JavaScript runtimes.
 
+## Why
+
+Loosely inspired by Go's `log/slog`, the design follows the child-logger pattern common in structured
+logging: create an immutable logger with stable attributes, then attach request or operation details
+closer to each call. Types enforce the application's attribute vocabulary, while transports and async
+context remain optional so the default entry point stays runtime-neutral.
+
+## Installation
+
+```sh
+npm install structured-logger
+```
+
 ## Usage
 
 ```ts
@@ -27,8 +40,13 @@ The default profile fixes `component` when creating a logger and accepts optiona
 `error` call attributes. The attributes argument may be omitted when no attributes are needed.
 Values, including errors, pass through unchanged.
 
-Profiles and reserved names are compile-time guardrails. This package performs no runtime
-validation, serialization, deep cloning, or redaction.
+> **Sensitive attribute guardrail:** TypeScript rejects the default reserved names (`body`, `header`,
+> `headers`, `prompt`, `secret`, and `token`) from extra attributes. The list can be expanded with a
+> [custom profile](#custom-profiles), providing a configurable compile-time security check that
+> reduces accidental logging of sensitive data. It is not runtime validation or redaction and can be
+> bypassed by JavaScript or type casts.
+
+This package performs no runtime validation, serialization, deep cloning, or redaction.
 
 Entries are merged in this order, with later values winning:
 
@@ -46,20 +64,26 @@ The default transport calls `console[level](entry)`. Pass a synchronous transpor
 second argument:
 
 ```ts
-const logger = createLogger<AppAttributes>({ component: "api" }, (level, entry) => {
-  write(level, entry);
-});
+import { createLogger, type Transport } from "structured-logger";
+
+const transport: Transport = (level, entry) => {
+  console.log(level, entry);
+};
+
+const logger = createLogger<AppAttributes>({ component: "api" }, transport);
 ```
 
-Transport errors propagate. Promise-returning transports are rejected because logger methods are
-synchronous. A network transport must enqueue internally and own its delivery and error handling.
+Transport errors propagate. The types reject Promise-returning transports because logger methods
+are synchronous. A network transport must enqueue internally and own its delivery and error handling.
 
 Share a transport and attribute vocabulary with a factory:
 
 ```ts
 import { createLoggerFactory } from "structured-logger";
 
-const logging = createLoggerFactory<AppAttributes>(transport);
+const logging = createLoggerFactory<AppAttributes>((level, entry) => {
+  console.log(level, entry);
+});
 const apiLogger = logging.createLogger({ component: "api" });
 const workerLogger = logging.createLogger({ component: "worker" });
 ```
@@ -70,11 +94,19 @@ const workerLogger = logging.createLogger({ component: "worker" });
 reserved names:
 
 ```ts
-import { createLogger, type LoggerProfile } from "structured-logger";
+import {
+  createLogger,
+  type DefaultReservedLogAttribute,
+  type LoggerProfile,
+} from "structured-logger";
 
-type AuditProfile = LoggerProfile<{ service: string }, { action: string; failure?: unknown }>;
+type AuditProfile = LoggerProfile<
+  { service: string },
+  { action: string; failure?: unknown },
+  DefaultReservedLogAttribute | "password"
+>;
 
-const audit = createLogger<{ actor: string }, AuditProfile>({
+const audit = createLogger<{ actor: string; password: string }, AuditProfile>({
   service: "billing",
 });
 
@@ -82,6 +114,9 @@ audit.info("charge created", {
   action: "charge.created",
   actor: "customer-1",
 });
+
+// Type error: password is reserved.
+audit.with({ password: "secret" });
 ```
 
 Extra attributes use `LogValue`, the JSON-like value union plus `Date` and `undefined`. Profile
@@ -97,7 +132,7 @@ import that same logger wherever its ambient context is needed:
 // logging.ts
 import { createLogger } from "structured-logger/als";
 
-export const logger = createLogger<AppAttributes>({ component: "api" }, transport);
+export const logger = createLogger<AppAttributes>({ component: "api" });
 ```
 
 ```ts

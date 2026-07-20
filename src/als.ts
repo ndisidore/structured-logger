@@ -29,6 +29,7 @@ export type {
   LogValue,
   Transport,
 } from "./core.js";
+export { consoleTransport } from "./core.js";
 
 export interface ContextLogger<
   ExtraAttributes extends object = NoExtraAttributes,

@@ -2,6 +2,7 @@ import {
   createLogger,
   createLoggerFactory,
   type DefaultLoggerProfile,
+  type DefaultReservedLogAttribute,
   type LogAttributes,
   type LogEntry,
   type Logger,
@@ -73,6 +74,26 @@ audit.info("missing action", { actor: "customer-1" });
 audit.with({ token: "secret" });
 // @ts-expect-error custom base attributes are fixed at logger creation
 audit.with({ service: "other" });
+
+type ExtendedReservedProfile = LoggerProfile<
+  { service: string },
+  { action: string },
+  DefaultReservedLogAttribute | "password"
+>;
+const extendedReserved = createLogger<{ password: string }, ExtendedReservedProfile>({
+  service: "billing",
+});
+// @ts-expect-error custom reserved attributes are prohibited
+extendedReserved.with({ password: "secret" });
+
+type ReplacedReservedProfile = LoggerProfile<{ service: string }, { action: string }, "credential">;
+const replacedReserved = createLogger<
+  { credential: string; token: string },
+  ReplacedReservedProfile
+>({ service: "billing" });
+replacedReserved.with({ token: "allowed" });
+// @ts-expect-error replacing reserved attributes prohibits the replacement
+replacedReserved.with({ credential: "secret" });
 
 type InvalidProfile = LoggerProfile<{ service: string }, { service: number }>;
 // @ts-expect-error base and call attributes cannot overlap
