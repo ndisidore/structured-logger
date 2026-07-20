@@ -159,8 +159,36 @@ isolated.
 The ALS entry point also exports `createLoggerFactory(transport)` for sharing transport
 configuration; every logger it creates still starts an independent lineage.
 
+Each root logger owns its lineage's async context storage. Dispose dynamically created roots after
+their contextual work finishes so Node can release that storage:
+
+```ts
+const logger = createLogger<AppAttributes>({ component: "job" });
+
+try {
+  await logger.withLogContext({ requestId: "req-1" }, handleRequest);
+} finally {
+  logger.dispose();
+}
+```
+
+Root loggers also implement `Symbol.dispose`, so explicit resource management is supported:
+
+```ts
+{
+  using logger = createLogger<AppAttributes>({ component: "job" });
+  await logger.withLogContext({ requestId: "req-1" }, handleRequest);
+} // Disposes the logger lineage.
+```
+
+Loggers derived with `.with()` share their root's storage but do not own or expose its disposal.
+Disposal is idempotent, immediately removes ambient context from the entire lineage, and prevents
+later `withLogContext()` calls. Explicit logging and `.with()` remain usable without ambient context.
+Independent roots, including roots created by the same factory, must be disposed independently.
+
 ALS follows asynchronous resources rather than lexical braces. Unawaited promises, timers, or other
-work created inside a scope may retain that context after the callback returns.
+work created inside a scope may retain that context after the callback returns. Await all contextual
+work before disposing its logger lineage; disposal clears context from work that is still running.
 
 ## Entry points
 

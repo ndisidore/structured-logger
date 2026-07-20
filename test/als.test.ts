@@ -90,6 +90,44 @@ describe("ALS logger context", () => {
     ]);
   });
 
+  it("disposes a root lineage without affecting explicit logging or other roots", () => {
+    const entries: Array<Record<string, unknown>> = [];
+    const logging = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      entries.push(entry);
+    });
+    const first = logging.createLogger({ component: "first" });
+    const firstChild = first.with({ operation: "child" });
+    const second = logging.createLogger({ component: "second" });
+
+    first.withLogContext({ requestId: "req-1" }, () => {
+      first.dispose();
+      first.dispose();
+      first.with({ operation: "after" }).info("after disposal");
+    });
+    second.withLogContext({ requestId: "req-2" }, () => second.info("still active"));
+
+    expect(() => first.withLogContext({ requestId: "req-3" }, () => undefined)).toThrow(
+      "Logger context has been disposed",
+    );
+    expect(() => firstChild.withLogContext({ requestId: "req-3" }, () => undefined)).toThrow(
+      "Logger context has been disposed",
+    );
+    expect(entries).toEqual([
+      { component: "first", message: "after disposal", operation: "after" },
+      { component: "second", message: "still active", requestId: "req-2" },
+    ]);
+  });
+
+  it("supports explicit resource management on root loggers", () => {
+    const logger = als.createLogger<ExtraAttributes>({ component: "api" });
+
+    logger[Symbol.dispose]();
+
+    expect(() => logger.withLogContext({ requestId: "req-1" }, () => undefined)).toThrow(
+      "Logger context has been disposed",
+    );
+  });
+
   it("isolates concurrent contexts on one logger", async () => {
     const entries: Array<Record<string, unknown>> = [];
     const logger = als.createLogger<ExtraAttributes>({ component: "api" }, (_level, entry) => {

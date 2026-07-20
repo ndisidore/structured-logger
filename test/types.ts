@@ -102,6 +102,19 @@ createLogger<Record<never, never>, InvalidProfile>({ service: "billing" });
 const factory = createLoggerFactory<ExtraAttributes>();
 factory.createLogger({ component: "worker" });
 
+const dictionaryLogger = createLogger<Record<string, string>>({ component: "api" });
+dictionaryLogger.info("arbitrary attributes remain available", { arbitrary: "value" });
+dictionaryLogger.info("profile call attributes remain available", { event: "dictionary.event" });
+dictionaryLogger.with({ arbitrary: "value" });
+// @ts-expect-error reserved attributes are prohibited with broad string index signatures
+dictionaryLogger.info("reserved", { token: "secret" });
+// @ts-expect-error message cannot be supplied as an attribute with broad string index signatures
+dictionaryLogger.info("message", { message: "replacement" });
+// @ts-expect-error fixed base attributes cannot be supplied with broad string index signatures
+dictionaryLogger.info("component", { component: "replacement" });
+// @ts-expect-error profile call attributes cannot be attached with .with()
+dictionaryLogger.with({ event: "dictionary.event" });
+
 const alsLogger = als.createLogger<ExtraAttributes>({ component: "api" });
 alsLogger.withLogContext({ requestId: "req-1" }, () => undefined);
 const alsChild: als.ContextLogger<ExtraAttributes> = alsLogger.with({ requestId: "req-1" });
@@ -116,8 +129,23 @@ const alsFactory = als.createLoggerFactory<ExtraAttributes>();
 const factoryLogger: als.ContextLogger<ExtraAttributes> = alsFactory.createLogger({
   component: "worker",
 });
+const disposableFactoryLogger: als.DisposableContextLogger<ExtraAttributes> =
+  alsFactory.createLogger({ component: "disposable-worker" });
+const nonOwningChild = disposableFactoryLogger.with({ requestId: "req-1" });
+disposableFactoryLogger.dispose();
+disposableFactoryLogger[Symbol.dispose]();
+{
+  using managedLogger = als.createLogger<ExtraAttributes>({ component: "managed-worker" });
+  managedLogger.info("managed");
+}
+// @ts-expect-error derived loggers do not own or expose lineage disposal
+nonOwningChild.dispose();
 // @ts-expect-error context belongs to returned loggers, not the factory
 alsFactory.withLogContext({ requestId: "req-1" }, () => undefined);
+const dictionaryAlsLogger = als.createLogger<Record<string, string>>({ component: "api" });
+dictionaryAlsLogger.withLogContext({ arbitrary: "value" }, () => undefined);
+// @ts-expect-error reserved attributes cannot enter broad ALS context dictionaries
+dictionaryAlsLogger.withLogContext({ token: "secret" }, () => undefined);
 void alsChild;
 void factoryLogger;
 

@@ -46,6 +46,15 @@ type ProfileKeys<Profile extends AnyLoggerProfile> =
   | keyof Profile["attributes"]
   | "message";
 
+type AttributeGuard<Keys extends PropertyKey> = {
+  [Key in Keys]?: never;
+};
+
+type CallAttributeKeys<Profile extends AnyLoggerProfile> =
+  | Profile["reserved"]
+  | keyof Profile["base"]
+  | "message";
+
 type ProfileConflict<Profile extends AnyLoggerProfile> =
   | Extract<keyof Profile["base"], keyof Profile["attributes"] | "message">
   | Extract<keyof Profile["attributes"], "message">;
@@ -71,23 +80,27 @@ type SafeAttributes<ExtraAttributes extends object, Profile extends AnyLoggerPro
 export type LoggerAttributes<
   ExtraAttributes extends object,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
-> = SafeAttributes<ExtraAttributes, Profile> & {
-  [Key in Extract<keyof ExtraAttributes, ProfileKeys<Profile>>]?: never;
-};
+> = SafeAttributes<ExtraAttributes, Profile> & AttributeGuard<ProfileKeys<Profile>>;
 
 type AttachedAttributes<
   ExtraAttributes extends object,
   Profile extends AnyLoggerProfile,
 > = ExtraAttributes extends NoExtraAttributes
   ? Readonly<Record<string, never>>
-  : Readonly<Partial<LoggerAttributes<ExtraAttributes, Profile>>>;
+  : Readonly<
+      Partial<SafeAttributes<ExtraAttributes, Profile>> & AttributeGuard<ProfileKeys<Profile>>
+    >;
 
 export type LogAttributes<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
 > = ExtraAttributes extends NoExtraAttributes
   ? Readonly<Profile["attributes"]>
-  : Readonly<Profile["attributes"] & Partial<LoggerAttributes<ExtraAttributes, Profile>>>;
+  : Readonly<
+      Profile["attributes"] &
+        Partial<SafeAttributes<ExtraAttributes, Profile>> &
+        AttributeGuard<CallAttributeKeys<Profile>>
+    >;
 
 export type LogEntry<
   ExtraAttributes extends object = NoExtraAttributes,
@@ -107,8 +120,14 @@ type LogMethodArguments<
   Attributes extends LogAttributes<ExtraAttributes, Profile>,
 > =
   object extends LogAttributes<ExtraAttributes, Profile>
-    ? [attributes?: Exact<Attributes, LogAttributes<ExtraAttributes, Profile>>]
-    : [attributes: Exact<Attributes, LogAttributes<ExtraAttributes, Profile>>];
+    ? [
+        attributes?: Exact<Attributes, LogAttributes<ExtraAttributes, Profile>> &
+          AttributeGuard<CallAttributeKeys<Profile>>,
+      ]
+    : [
+        attributes: Exact<Attributes, LogAttributes<ExtraAttributes, Profile>> &
+          AttributeGuard<CallAttributeKeys<Profile>>,
+      ];
 
 type LogMethod<ExtraAttributes extends object, Profile extends AnyLoggerProfile> = <
   Attributes extends LogAttributes<ExtraAttributes, Profile> = LogAttributes<
@@ -138,7 +157,8 @@ export interface Logger<
 > {
   /** Returns a new logger with attributes attached to every entry. */
   with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
-    attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>>,
+    attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>> &
+      AttributeGuard<ProfileKeys<Profile>>,
   ): Logger<ExtraAttributes, Profile>;
   /** Writes a debug-level entry. */
   debug: LogMethod<ExtraAttributes, Profile>;
@@ -191,10 +211,15 @@ class StructuredLogger<
     this.#attributes = { ...attributes } as AttachedAttributes<ExtraAttributes, Profile>;
     this.#transport = transport;
     this.#readContext = readContext;
+    this.debug = this.debug.bind(this);
+    this.info = this.info.bind(this);
+    this.warn = this.warn.bind(this);
+    this.error = this.error.bind(this);
   }
 
   with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
-    attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>>,
+    attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>> &
+      AttributeGuard<ProfileKeys<Profile>>,
   ): Logger<ExtraAttributes, Profile> {
     return new StructuredLogger(
       this.#base,

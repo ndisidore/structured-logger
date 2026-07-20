@@ -9,6 +9,27 @@ type ExtraAttributes = {
 
 describe("structured logger", () => {
   it.each(["debug", "info", "warn", "error"] as const)(
+    "supports detached %s methods on root and derived loggers",
+    (level) => {
+      const writes: unknown[] = [];
+      const root = createLogger<ExtraAttributes>({ component: "api" }, (writtenLevel, entry) => {
+        writes.push([writtenLevel, entry]);
+      });
+      const child = root.with({ operation: "request" });
+      const rootWrite = root[level];
+      const childWrite = child[level];
+
+      rootWrite("root");
+      childWrite("child");
+
+      expect(writes).toEqual([
+        [level, { component: "api", message: "root" }],
+        [level, { component: "api", message: "child", operation: "request" }],
+      ]);
+    },
+  );
+
+  it.each(["debug", "info", "warn", "error"] as const)(
     "writes a structured entry to console.%s by default",
     (level) => {
       const write = vi.spyOn(console, level).mockImplementation(() => undefined);

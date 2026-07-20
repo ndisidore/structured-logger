@@ -1,3 +1,5 @@
+/// <reference lib="esnext.disposable" preserve="true" />
+
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   consoleTransport,
@@ -46,6 +48,18 @@ export interface ContextLogger<
   ): Result;
 }
 
+/** Owns the async context storage shared by a context logger lineage. */
+export interface DisposableContextLogger<
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+>
+  extends ContextLogger<ExtraAttributes, Profile>, Disposable {
+  /** Permanently disables ambient context for this logger lineage. */
+  dispose(): void;
+  /** Permanently disables ambient context for this logger lineage. */
+  [Symbol.dispose](): void;
+}
+
 export interface ContextLoggerFactory<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
@@ -53,21 +67,30 @@ export interface ContextLoggerFactory<
   /** Creates a context-aware logger with an independent context store. */
   createLogger<Base extends LoggerBase<Profile>>(
     base: Exact<Base, LoggerBase<Profile>>,
-  ): ContextLogger<ExtraAttributes, Profile>;
+  ): DisposableContextLogger<ExtraAttributes, Profile>;
 }
+
+type ContextLineage = {
+  disposed: boolean;
+  storage: AsyncLocalStorage<Readonly<object>>;
+};
 
 function withContext<ExtraAttributes extends object, Profile extends AnyLoggerProfile>(
   logger: Logger<ExtraAttributes, Profile>,
-  storage: AsyncLocalStorage<Readonly<object>>,
+  lineage: ContextLineage,
 ): ContextLogger<ExtraAttributes, Profile> {
   return {
     debug: logger.debug.bind(logger),
     info: logger.info.bind(logger),
     warn: logger.warn.bind(logger),
     error: logger.error.bind(logger),
-    with: (attributes) => withContext(logger.with(attributes), storage),
-    withLogContext: (attributes, callback) =>
-      storage.run({ ...storage.getStore(), ...attributes }, callback),
+    with: (attributes) => withContext(logger.with(attributes), lineage),
+    withLogContext: (attributes, callback) => {
+      if (lineage.disposed) {
+        throw new Error("Logger context has been disposed");
+      }
+      return lineage.storage.run({ ...lineage.storage.getStore(), ...attributes }, callback);
+    },
   };
 }
 
@@ -79,12 +102,19 @@ export function createLogger<
 >(
   base: Exact<Base, LoggerBase<Profile>>,
   transport: Transport<LogEntry<ExtraAttributes, Profile>> = consoleTransport,
-): ContextLogger<ExtraAttributes, Profile> {
+): DisposableContextLogger<ExtraAttributes, Profile> {
   const storage = new AsyncLocalStorage<Readonly<object>>();
-  return withContext(
-    createLoggerWithContext(base, transport, () => storage.getStore()),
-    storage,
+  const lineage: ContextLineage = { disposed: false, storage };
+  const logger = withContext<ExtraAttributes, Profile>(
+    createLoggerWithContext<ExtraAttributes, Profile>(base, transport, () => storage.getStore()),
+    lineage,
   );
+  const dispose = () => {
+    if (lineage.disposed) return;
+    lineage.disposed = true;
+    storage.disable();
+  };
+  return { ...logger, dispose, [Symbol.dispose]: dispose };
 }
 
 /** Creates context-aware loggers that share a transport but keep independent context stores. */
