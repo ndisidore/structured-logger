@@ -1,30 +1,29 @@
 import {
   consoleTransport,
   createLoggerWithContext,
-  type AnyLoggerTypes,
-  type CreateLoggerOptions,
-  type DefaultLoggerTypes,
+  type AnyLoggerProfile,
+  type DefaultLoggerProfile,
+  type Exact,
   type LogEntry,
   type Logger,
+  type LoggerBase,
   type LoggerFactory,
-  type LoggerFactoryOptions,
+  type NoExtraAttributes,
   type Transport,
 } from "./core.js";
 
 export type {
-  CreateLoggerOptions,
-  DefaultLoggerTypes,
-  DefaultReservedLogField,
-  InferredLogContext,
+  DefaultLoggerProfile,
+  DefaultReservedLogAttribute,
+  LogAttributes,
   LogContext,
-  LogDetails,
   LogEntry,
   LogLevel,
   Logger,
+  LoggerAttributes,
+  LoggerBase,
   LoggerFactory,
-  LoggerFactoryOptions,
-  LoggerFields,
-  LoggerTypes,
+  LoggerProfile,
   LogValue,
   Transport,
 } from "./core.js";
@@ -33,19 +32,23 @@ export { consoleTransport } from "./core.js";
 const noContext = () => undefined;
 
 export function createLogger<
-  Fields extends object = Record<never, never>,
-  Types extends AnyLoggerTypes = DefaultLoggerTypes,
->(options: CreateLoggerOptions<Fields, Types>): Logger<Fields, Types> {
-  return createLoggerWithContext(options, noContext);
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+  Base extends LoggerBase<Profile> = LoggerBase<Profile>,
+>(
+  base: Exact<Base, LoggerBase<Profile>>,
+  transport: Transport<LogEntry<ExtraAttributes, Profile>> = consoleTransport,
+): Logger<ExtraAttributes, Profile> {
+  return createLoggerWithContext(base, transport, noContext);
 }
 
 export function createLoggerFactory<
-  Fields extends object = Record<never, never>,
-  Types extends AnyLoggerTypes = DefaultLoggerTypes,
->(options: LoggerFactoryOptions<Fields, Types> = {}): LoggerFactory<Fields, Types> {
-  const transport = options.transport ?? (consoleTransport as Transport<LogEntry<Fields, Types>>);
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+>(
+  transport: Transport<LogEntry<ExtraAttributes, Profile>> = consoleTransport,
+): LoggerFactory<ExtraAttributes, Profile> {
   return {
-    createLogger: (loggerOptions) =>
-      createLoggerWithContext({ ...loggerOptions, transport }, noContext),
+    createLogger: (base) => createLoggerWithContext(base, transport, noContext),
   };
 }

@@ -10,46 +10,49 @@ export type LogValue =
   | { readonly [key: string]: LogValue }
   | readonly LogValue[];
 
-export type LoggerTypes<
-  Base extends object = object,
-  Details extends object = object,
-  Reserved extends PropertyKey = never,
-> = {
-  base: Base;
-  details: Details;
-  reserved: Reserved;
-};
-
-export type AnyLoggerTypes = LoggerTypes<object, object, PropertyKey>;
-
-export type DefaultReservedLogField =
+export type DefaultReservedLogAttribute =
   | "body"
-  | "component"
-  | "error"
-  | "errorStack"
-  | "event"
   | "header"
   | "headers"
-  | "message"
   | "prompt"
   | "secret"
   | "token";
 
-export type DefaultLoggerTypes = LoggerTypes<
+export type LoggerProfile<
+  Base extends object,
+  Attributes extends object,
+  Reserved extends PropertyKey = DefaultReservedLogAttribute,
+> = {
+  base: Base;
+  attributes: Attributes;
+  reserved: Reserved;
+};
+
+export type AnyLoggerProfile = LoggerProfile<object, object, PropertyKey>;
+
+export type Exact<Actual, Allowed> = Actual & Record<Exclude<keyof Actual, keyof Allowed>, never>;
+
+export type DefaultLoggerProfile = LoggerProfile<
   { component: string },
-  { event: string; error?: unknown },
-  DefaultReservedLogField
+  { event?: string; error?: unknown }
 >;
 
-type ProfileKeys<Types extends AnyLoggerTypes> =
-  | Types["reserved"]
-  | keyof Types["base"]
-  | keyof Types["details"]
+declare const noExtraAttributes: unique symbol;
+export type NoExtraAttributes = { readonly [noExtraAttributes]: never };
+
+type ProfileKeys<Profile extends AnyLoggerProfile> =
+  | Profile["reserved"]
+  | keyof Profile["base"]
+  | keyof Profile["attributes"]
   | "message";
+
+type ProfileConflict<Profile extends AnyLoggerProfile> =
+  | Extract<keyof Profile["base"], keyof Profile["attributes"] | "message">
+  | Extract<keyof Profile["attributes"], "message">;
 
 type IsLogValue<Value> = Value extends string | number | boolean | Date | null | undefined
   ? true
-  : Value extends (...args: never[]) => unknown
+  : Value extends CallableFunction
     ? false
     : Value extends readonly (infer Item)[]
       ? IsLogValue<Item>
@@ -59,145 +62,184 @@ type IsLogValue<Value> = Value extends string | number | boolean | Date | null |
           : true
         : false;
 
-type SafeFields<Fields extends object, Types extends AnyLoggerTypes> = {
-  [Key in keyof Fields as Key extends ProfileKeys<Types> ? never : Key]: true extends IsLogValue<
-    Fields[Key]
-  >
-    ? Fields[Key]
-    : never;
+type SafeAttributes<ExtraAttributes extends object, Profile extends AnyLoggerProfile> = {
+  [Key in keyof ExtraAttributes as Key extends ProfileKeys<Profile>
+    ? never
+    : Key]: false extends IsLogValue<ExtraAttributes[Key]> ? never : ExtraAttributes[Key];
 };
 
-export type LoggerFields<Fields extends object, Types extends AnyLoggerTypes> = SafeFields<
-  Fields,
-  Types
-> & {
-  [Key in Extract<keyof Fields, ProfileKeys<Types>>]?: never;
+export type LoggerAttributes<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> = SafeAttributes<ExtraAttributes, Profile> & {
+  [Key in Extract<keyof ExtraAttributes, ProfileKeys<Profile>>]?: never;
 };
 
-export type LogDetails<Fields extends object, Types extends AnyLoggerTypes> = Readonly<
-  Types["details"] & Partial<LoggerFields<Fields, Types>>
->;
+type AttachedAttributes<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile,
+> = ExtraAttributes extends NoExtraAttributes
+  ? Readonly<Record<string, never>>
+  : Readonly<Partial<LoggerAttributes<ExtraAttributes, Profile>>>;
 
-export type LogEntry<Fields extends object, Types extends AnyLoggerTypes> = Readonly<
+export type LogAttributes<
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> = ExtraAttributes extends NoExtraAttributes
+  ? Readonly<Profile["attributes"]>
+  : Readonly<Profile["attributes"] & Partial<LoggerAttributes<ExtraAttributes, Profile>>>;
+
+export type LogEntry<
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> = Readonly<
   Omit<
-    Partial<SafeFields<Fields, Types>>,
-    keyof Types["details"] | keyof Types["base"] | "message"
+    Partial<SafeAttributes<ExtraAttributes, Profile>>,
+    keyof Profile["attributes"] | keyof Profile["base"] | "message"
   > &
-    Omit<Types["details"], keyof Types["base"] | "message"> &
-    Types["base"] & { message: string }
+    Omit<Profile["attributes"], keyof Profile["base"] | "message"> &
+    Profile["base"] & { message: string }
 >;
+
+type LogMethodArguments<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile,
+  Attributes extends LogAttributes<ExtraAttributes, Profile>,
+> =
+  object extends LogAttributes<ExtraAttributes, Profile>
+    ? [attributes?: Exact<Attributes, LogAttributes<ExtraAttributes, Profile>>]
+    : [attributes: Exact<Attributes, LogAttributes<ExtraAttributes, Profile>>];
+
+type LogMethod<ExtraAttributes extends object, Profile extends AnyLoggerProfile> = <
+  Attributes extends LogAttributes<ExtraAttributes, Profile> = LogAttributes<
+    ExtraAttributes,
+    Profile
+  >,
+>(
+  message: string,
+  ...args: LogMethodArguments<ExtraAttributes, Profile, Attributes>
+) => void;
 
 export type Transport<Entry extends object = object> = (
   level: LogLevel,
   entry: Readonly<Entry>,
-) => void;
+) => void | undefined;
 
-export type CreateLoggerOptions<Fields extends object, Types extends AnyLoggerTypes> = Readonly<{
-  base: Readonly<Types["base"]>;
-  fields?: Readonly<Partial<LoggerFields<Fields, Types>>>;
-  transport?: Transport<LogEntry<Fields, Types>>;
-}>;
+export type LoggerBase<Profile extends AnyLoggerProfile = DefaultLoggerProfile> = [
+  ProfileConflict<Profile>,
+] extends [never]
+  ? Readonly<Profile["base"]>
+  : never;
 
-export interface Logger<Fields extends object, Types extends AnyLoggerTypes> {
-  with(fields: Readonly<Partial<LoggerFields<Fields, Types>>>): Logger<Fields, Types>;
-  debug(message: string, details: LogDetails<Fields, Types>): void;
-  info(message: string, details: LogDetails<Fields, Types>): void;
-  warn(message: string, details: LogDetails<Fields, Types>): void;
-  error(message: string, details: LogDetails<Fields, Types>): void;
+export interface Logger<
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> {
+  with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
+    attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>>,
+  ): Logger<ExtraAttributes, Profile>;
+  debug: LogMethod<ExtraAttributes, Profile>;
+  info: LogMethod<ExtraAttributes, Profile>;
+  warn: LogMethod<ExtraAttributes, Profile>;
+  error: LogMethod<ExtraAttributes, Profile>;
 }
 
-export interface LoggerFactory<Fields extends object, Types extends AnyLoggerTypes> {
-  createLogger(
-    options: Omit<CreateLoggerOptions<Fields, Types>, "transport">,
-  ): Logger<Fields, Types>;
+export interface LoggerFactory<
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> {
+  createLogger<Base extends LoggerBase<Profile>>(
+    base: Exact<Base, LoggerBase<Profile>>,
+  ): Logger<ExtraAttributes, Profile>;
 }
 
-export type LoggerFactoryOptions<Fields extends object, Types extends AnyLoggerTypes> = Readonly<{
-  transport?: Transport<LogEntry<Fields, Types>>;
-}>;
-
-export type LogContext<Fields extends object, Types extends AnyLoggerTypes> = Readonly<
-  Partial<LoggerFields<Fields, Types>>
->;
-
-export type InferredLogContext<Fields extends object, Types extends AnyLoggerTypes> = Readonly<{
-  [Key in keyof Fields]: Key extends ProfileKeys<Types>
-    ? never
-    : true extends IsLogValue<Fields[Key]>
-      ? Fields[Key]
-      : never;
-}>;
+export type LogContext<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> = AttachedAttributes<ExtraAttributes, Profile>;
 
 type ContextReader = () => Readonly<object> | undefined;
 
-export const consoleTransport: Transport = (level, entry) => console[level](entry);
+export const consoleTransport: Transport = (level, entry) => {
+  console[level](entry);
+};
 
-class StructuredLogger<Fields extends object, Types extends AnyLoggerTypes> implements Logger<
-  Fields,
-  Types
-> {
-  readonly #base: Readonly<Types["base"]>;
-  readonly #fields: Readonly<Partial<LoggerFields<Fields, Types>>>;
+class StructuredLogger<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile,
+> implements Logger<ExtraAttributes, Profile> {
+  readonly #base: LoggerBase<Profile>;
+  readonly #attributes: AttachedAttributes<ExtraAttributes, Profile>;
   readonly #readContext: ContextReader;
-  readonly #transport: Transport<LogEntry<Fields, Types>>;
+  readonly #transport: Transport<LogEntry<ExtraAttributes, Profile>>;
 
   constructor(
-    base: Readonly<Types["base"]>,
-    fields: Readonly<Partial<LoggerFields<Fields, Types>>>,
-    transport: Transport<LogEntry<Fields, Types>>,
+    base: LoggerBase<Profile>,
+    attributes: AttachedAttributes<ExtraAttributes, Profile>,
+    transport: Transport<LogEntry<ExtraAttributes, Profile>>,
     readContext: ContextReader,
   ) {
     this.#base = { ...base };
-    this.#fields = { ...fields };
+    this.#attributes = { ...attributes } as AttachedAttributes<ExtraAttributes, Profile>;
     this.#transport = transport;
     this.#readContext = readContext;
   }
 
-  with(fields: Readonly<Partial<LoggerFields<Fields, Types>>>): Logger<Fields, Types> {
+  with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
+    attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>>,
+  ): Logger<ExtraAttributes, Profile> {
     return new StructuredLogger(
       this.#base,
-      { ...this.#fields, ...fields },
+      { ...this.#attributes, ...attributes } as AttachedAttributes<ExtraAttributes, Profile>,
       this.#transport,
       this.#readContext,
     );
   }
 
-  debug(message: string, details: LogDetails<Fields, Types>): void {
-    this.#write("debug", message, details);
+  debug(message: string, attributes?: LogAttributes<ExtraAttributes, Profile>): void {
+    this.#write("debug", message, attributes);
   }
 
-  info(message: string, details: LogDetails<Fields, Types>): void {
-    this.#write("info", message, details);
+  info(message: string, attributes?: LogAttributes<ExtraAttributes, Profile>): void {
+    this.#write("info", message, attributes);
   }
 
-  warn(message: string, details: LogDetails<Fields, Types>): void {
-    this.#write("warn", message, details);
+  warn(message: string, attributes?: LogAttributes<ExtraAttributes, Profile>): void {
+    this.#write("warn", message, attributes);
   }
 
-  error(message: string, details: LogDetails<Fields, Types>): void {
-    this.#write("error", message, details);
+  error(message: string, attributes?: LogAttributes<ExtraAttributes, Profile>): void {
+    this.#write("error", message, attributes);
   }
 
-  #write(level: LogLevel, message: string, details: LogDetails<Fields, Types>): void {
+  #write(
+    level: LogLevel,
+    message: string,
+    attributes: LogAttributes<ExtraAttributes, Profile> | undefined,
+  ): void {
     const entry = {
       ...this.#readContext(),
-      ...this.#fields,
-      ...details,
+      ...this.#attributes,
+      ...attributes,
       ...this.#base,
       message,
-    } as LogEntry<Fields, Types>;
+    } as LogEntry<ExtraAttributes, Profile>;
     this.#transport(level, entry);
   }
 }
 
-export function createLoggerWithContext<Fields extends object, Types extends AnyLoggerTypes>(
-  options: CreateLoggerOptions<Fields, Types>,
+export function createLoggerWithContext<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile,
+>(
+  base: LoggerBase<Profile>,
+  transport: Transport<LogEntry<ExtraAttributes, Profile>>,
   readContext: ContextReader,
-): Logger<Fields, Types> {
+): Logger<ExtraAttributes, Profile> {
   return new StructuredLogger(
-    options.base,
-    options.fields ?? ({} as Partial<LoggerFields<Fields, Types>>),
-    options.transport ?? (consoleTransport as Transport<LogEntry<Fields, Types>>),
+    base,
+    {} as AttachedAttributes<ExtraAttributes, Profile>,
+    transport,
     readContext,
   );
 }

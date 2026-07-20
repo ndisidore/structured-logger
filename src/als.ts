@@ -2,69 +2,52 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   consoleTransport,
   createLoggerWithContext,
-  type AnyLoggerTypes,
-  type CreateLoggerOptions,
-  type DefaultLoggerTypes,
-  type InferredLogContext,
+  type AnyLoggerProfile,
+  type DefaultLoggerProfile,
   type LogContext,
   type LogEntry,
-  type Logger,
   type LoggerFactory,
-  type LoggerFactoryOptions,
+  type NoExtraAttributes,
   type Transport,
 } from "./core.js";
 
 export type {
-  CreateLoggerOptions,
-  DefaultLoggerTypes,
-  DefaultReservedLogField,
-  InferredLogContext,
+  DefaultLoggerProfile,
+  DefaultReservedLogAttribute,
+  LogAttributes,
   LogContext,
-  LogDetails,
   LogEntry,
   LogLevel,
   Logger,
+  LoggerAttributes,
+  LoggerBase,
   LoggerFactory,
-  LoggerFactoryOptions,
-  LoggerFields,
-  LoggerTypes,
+  LoggerProfile,
   LogValue,
   Transport,
 } from "./core.js";
-export { consoleTransport } from "./core.js";
 
 export interface ContextLoggerFactory<
-  Fields extends object,
-  Types extends AnyLoggerTypes,
-> extends LoggerFactory<Fields, Types> {
-  withLogContext<Result>(fields: LogContext<Fields, Types>, callback: () => Result): Result;
-}
-
-const context = new AsyncLocalStorage<Readonly<object>>();
-
-export function withLogContext<Fields extends object, Result>(
-  fields: InferredLogContext<Fields, DefaultLoggerTypes>,
-  callback: () => Result,
-): Result {
-  return context.run({ ...context.getStore(), ...fields }, callback);
-}
-
-export function createLogger<Fields extends object = Record<never, never>>(
-  options: CreateLoggerOptions<Fields, DefaultLoggerTypes>,
-): Logger<Fields, DefaultLoggerTypes> {
-  return createLoggerWithContext(options, () => context.getStore());
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile,
+> extends LoggerFactory<ExtraAttributes, Profile> {
+  withLogContext<Attributes extends LogContext<ExtraAttributes, Profile>, Result>(
+    attributes: Attributes &
+      Record<Exclude<keyof Attributes, keyof LogContext<ExtraAttributes, Profile>>, never>,
+    callback: () => Result,
+  ): Result;
 }
 
 export function createLoggerFactory<
-  Fields extends object = Record<never, never>,
-  Types extends AnyLoggerTypes = DefaultLoggerTypes,
->(options: LoggerFactoryOptions<Fields, Types> = {}): ContextLoggerFactory<Fields, Types> {
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+>(
+  transport: Transport<LogEntry<ExtraAttributes, Profile>> = consoleTransport,
+): ContextLoggerFactory<ExtraAttributes, Profile> {
   const storage = new AsyncLocalStorage<Readonly<object>>();
-  const transport = options.transport ?? (consoleTransport as Transport<LogEntry<Fields, Types>>);
   return {
-    createLogger: (loggerOptions) =>
-      createLoggerWithContext({ ...loggerOptions, transport }, () => storage.getStore()),
-    withLogContext: (fields, callback) =>
-      storage.run({ ...storage.getStore(), ...fields }, callback),
+    createLogger: (base) => createLoggerWithContext(base, transport, () => storage.getStore()),
+    withLogContext: (attributes, callback) =>
+      storage.run({ ...storage.getStore(), ...attributes }, callback),
   };
 }

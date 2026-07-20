@@ -1,26 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { createLogger as createNeutralLogger } from "../src/index.js";
-import { createLogger, createLoggerFactory, withLogContext } from "../src/als.js";
+import * as als from "../src/als.js";
 
-type Fields = {
+type ExtraAttributes = {
   operation: string;
   requestId: string;
 };
 
 describe("ALS logger context", () => {
+  it("exposes only the factory runtime API", () => {
+    expect(Object.keys(als)).toEqual(["createLoggerFactory"]);
+  });
+
   it("inherits nested async context and restores its parent", async () => {
     const entries: Array<Record<string, unknown>> = [];
-    const logging = createLoggerFactory<Fields>({
-      transport: (_level, entry) => entries.push(entry),
+    const logging = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      entries.push(entry);
     });
-    const logger = logging.createLogger({ base: { component: "api" } });
+    const logger = logging.createLogger({ component: "api" });
 
     await logging.withLogContext({ operation: "request" }, async () => {
       await logging.withLogContext({ requestId: "req-1" }, async () => {
         await Promise.resolve();
-        logger.info("nested", { event: "nested" });
+        logger.info("nested", {});
       });
-      logger.info("parent", { event: "parent" });
+      logger.info("parent", {});
     });
 
     expect(entries[0]).toMatchObject({ operation: "request", requestId: "req-1" });
@@ -30,10 +34,10 @@ describe("ALS logger context", () => {
 
   it("isolates concurrent contexts", async () => {
     const entries: Array<Record<string, unknown>> = [];
-    const logging = createLoggerFactory<Fields>({
-      transport: (_level, entry) => entries.push(entry),
+    const logging = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      entries.push(entry);
     });
-    const logger = logging.createLogger({ base: { component: "api" } });
+    const logger = logging.createLogger({ component: "api" });
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -63,96 +67,67 @@ describe("ALS logger context", () => {
   it("isolates context between factories", () => {
     const firstEntries: Array<Record<string, unknown>> = [];
     const secondEntries: Array<Record<string, unknown>> = [];
-    const first = createLoggerFactory<Fields>({
-      transport: (_level, entry) => firstEntries.push(entry),
+    const first = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      firstEntries.push(entry);
     });
-    const second = createLoggerFactory<Fields>({
-      transport: (_level, entry) => secondEntries.push(entry),
+    const second = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      secondEntries.push(entry);
     });
 
     first.withLogContext({ requestId: "req-1" }, () => {
-      first.createLogger({ base: { component: "first" } }).info("first", { event: "first" });
-      second.createLogger({ base: { component: "second" } }).info("second", { event: "second" });
+      first.createLogger({ component: "first" }).info("first", {});
+      second.createLogger({ component: "second" }).info("second", {});
     });
 
     expect(firstEntries[0]).toMatchObject({ requestId: "req-1" });
     expect(secondEntries[0]).not.toHaveProperty("requestId");
   });
 
-  it("applies context, bound fields, details, and base precedence", () => {
+  it("applies context, attached attributes, call attributes, and base precedence", () => {
     const entries: Array<Record<string, unknown>> = [];
-    const logging = createLoggerFactory<Fields>({
-      transport: (_level, entry) => entries.push(entry),
+    const logging = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      entries.push(entry);
     });
-    const logger = logging.createLogger({
-      base: { component: "api" },
-      fields: { operation: "bound" },
-    });
+    const logger = logging.createLogger({ component: "api" }).with({ operation: "attached" });
 
     logging.withLogContext({ operation: "ambient" }, () => {
-      logger.info("handled", { event: "handled", operation: "details" });
+      logger.info("handled", { operation: "call" });
     });
 
     expect(entries).toEqual([
       {
         component: "api",
-        event: "handled",
         message: "handled",
-        operation: "details",
+        operation: "call",
       },
     ]);
   });
 
-  it("shares module context across direct loggers", () => {
-    const entries: Array<Record<string, unknown>> = [];
-    const first = createLogger<Fields>({
-      base: { component: "first" },
-      transport: (_level, entry) => entries.push(entry),
-    });
-    const second = createLogger<Fields>({
-      base: { component: "second" },
-      transport: (_level, entry) => entries.push(entry),
-    });
-
-    withLogContext<Pick<Fields, "requestId">, void>({ requestId: "req-1" }, () => {
-      first.info("first", { event: "first" });
-      second.info("second", { event: "second" });
-    });
-
-    expect(entries).toEqual([
-      { component: "first", event: "first", message: "first", requestId: "req-1" },
-      { component: "second", event: "second", message: "second", requestId: "req-1" },
-    ]);
-  });
-
-  it("does not expose context to the neutral logger", () => {
+  it("does not expose ALS context to the neutral logger", () => {
     const contextualEntries: unknown[] = [];
     const neutralEntries: unknown[] = [];
-    const logging = createLoggerFactory<Fields>({
-      transport: (_level, entry) => contextualEntries.push(entry),
+    const logging = als.createLoggerFactory<ExtraAttributes>((_level, entry) => {
+      contextualEntries.push(entry);
     });
-    const neutralLogger = createNeutralLogger<Fields>({
-      base: { component: "neutral" },
-      transport: (_level, entry) => neutralEntries.push(entry),
-    });
+    const neutralLogger = createNeutralLogger<ExtraAttributes>(
+      { component: "neutral" },
+      (_level, entry) => {
+        neutralEntries.push(entry);
+      },
+    );
 
     logging.withLogContext({ requestId: "req-1" }, () => {
-      logging
-        .createLogger({ base: { component: "api" } })
-        .info("contextual", { event: "contextual" });
-      neutralLogger.info("neutral", { event: "neutral" });
+      logging.createLogger({ component: "api" }).info("contextual", {});
+      neutralLogger.info("neutral", {});
     });
 
     expect(contextualEntries).toEqual([
       {
         component: "api",
-        event: "contextual",
         message: "contextual",
         requestId: "req-1",
       },
     ]);
-    expect(neutralEntries).toEqual([
-      { component: "neutral", event: "neutral", message: "neutral" },
-    ]);
+    expect(neutralEntries).toEqual([{ component: "neutral", message: "neutral" }]);
   });
 });
