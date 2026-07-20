@@ -81,19 +81,24 @@ createLogger<Record<never, never>, InvalidProfile>({ service: "billing" });
 const factory = createLoggerFactory<ExtraAttributes>();
 factory.createLogger({ component: "worker" });
 
-const alsLogging = als.createLoggerFactory<ExtraAttributes>();
-alsLogging.withLogContext({ requestId: "req-1" }, () => undefined);
+const alsLogger = als.createLogger<ExtraAttributes>({ component: "api" });
+alsLogger.withLogContext({ requestId: "req-1" }, () => undefined);
+const alsChild: als.ContextLogger<ExtraAttributes> = alsLogger.with({ requestId: "req-1" });
 // @ts-expect-error factory context is restricted to its declared attributes
-alsLogging.withLogContext({ operation: "unknown" }, () => undefined);
+alsLogger.withLogContext({ operation: "unknown" }, () => undefined);
 // @ts-expect-error reserved attributes cannot enter ambient context
-alsLogging.withLogContext({ token: "secret" }, () => undefined);
+alsLogger.withLogContext({ token: "secret" }, () => undefined);
 const misspelledContext = { requestId: "req-1", requsetId: "req-1" };
 // @ts-expect-error ALS context rejects additional variable properties
-alsLogging.withLogContext(misspelledContext, () => undefined);
-// @ts-expect-error ALS exposes no direct logger creation
-export type AlsCreateLogger = typeof als.createLogger;
-// @ts-expect-error ALS exposes no module-global context helper
-export type AlsWithLogContext = typeof als.withLogContext;
+alsLogger.withLogContext(misspelledContext, () => undefined);
+const alsFactory = als.createLoggerFactory<ExtraAttributes>();
+const factoryLogger: als.ContextLogger<ExtraAttributes> = alsFactory.createLogger({
+  component: "worker",
+});
+// @ts-expect-error context belongs to returned loggers, not the factory
+alsFactory.withLogContext({ requestId: "req-1" }, () => undefined);
+void alsChild;
+void factoryLogger;
 
 const syncTransport: Transport = () => undefined;
 createLogger({ component: "api" }, syncTransport);

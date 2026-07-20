@@ -90,28 +90,49 @@ the default reserved names need to be extended or explicitly replaced.
 
 ## Async context
 
-The `/als` entry point exposes an isolated factory backed by `AsyncLocalStorage`:
+The `/als` entry point creates loggers backed by `AsyncLocalStorage`. Export a stable logger and
+import that same logger wherever its ambient context is needed:
 
 ```ts
-import { createLoggerFactory } from "structured-logger/als";
+// logging.ts
+import { createLogger } from "structured-logger/als";
 
-const logging = createLoggerFactory<AppAttributes>(transport);
-const logger = logging.createLogger({ component: "api" });
-
-await logging.withLogContext({ requestId: "req-1" }, async () => {
-  await handleRequest(logger);
-});
+export const logger = createLogger<AppAttributes>({ component: "api" }, transport);
 ```
 
-Each factory owns its context store. Nested scopes inherit their parent's attributes, concurrent
-scopes remain isolated, and context does not affect loggers created from the root entry point.
+```ts
+// request.ts
+import { logger } from "./logging.js";
+
+await logger.withLogContext({ requestId: "req-1" }, handleRequest);
+```
+
+```ts
+// downstream.ts
+import { logger } from "./logging.js";
+
+export async function handleRequest() {
+  logger.info("handling request"); // includes requestId
+}
+```
+
+Each root ALS logger owns its context store. Loggers derived from it with `.with()` share that store,
+forming one logger lineage. Independent roots remain isolated, including roots created by the same
+factory. Nested scopes merge with their parent, nearest values win, and concurrent scopes remain
+isolated.
+
+The ALS entry point also exports `createLoggerFactory(transport)` for sharing transport
+configuration; every logger it creates still starts an independent lineage.
+
+ALS follows asynchronous resources rather than lexical braces. Unawaited promises, timers, or other
+work created inside a scope may retain that context after the callback returns.
 
 ## Entry points
 
 | Import                  | Runtimes                           | Context                            |
 | ----------------------- | ---------------------------------- | ---------------------------------- |
 | `structured-logger`     | Browsers, workers, Deno, Bun, Node | Explicit `.with()` only            |
-| `structured-logger/als` | Node and compatible runtimes       | Factory-scoped `AsyncLocalStorage` |
+| `structured-logger/als` | Node and compatible runtimes       | Logger-lineage `AsyncLocalStorage` |
 
 Only the `/als` entry point imports `node:async_hooks`. Cloudflare Workers must enable `nodejs_als`
 or `nodejs_compat` to use it. A Worker transport that starts asynchronous delivery must register its
