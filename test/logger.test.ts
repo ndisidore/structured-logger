@@ -8,6 +8,24 @@ type ExtraAttributes = {
 };
 
 describe("structured logger", () => {
+  it("returns detached context snapshots with base and attached attributes", () => {
+    const root = createLogger<ExtraAttributes>({ component: "api" }).with({
+      operation: "parent",
+    });
+    const child = root.with({ operation: "child", requestId: "req-1" });
+    const getContext = child.getContext;
+
+    const snapshot = getContext();
+    (snapshot as { operation: string }).operation = "mutated";
+
+    expect(root.getContext()).toEqual({ component: "api", operation: "parent" });
+    expect(getContext()).toEqual({
+      component: "api",
+      operation: "child",
+      requestId: "req-1",
+    });
+  });
+
   it.each(["debug", "info", "warn", "error"] as const)(
     "supports detached %s methods on root and derived loggers",
     (level) => {

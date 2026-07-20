@@ -114,6 +114,19 @@ export type LogEntry<
     Profile["base"] & { message: string }
 >;
 
+type ContextExtraAttributes<
+  ExtraAttributes extends object,
+  Profile extends AnyLoggerProfile,
+> = ExtraAttributes extends NoExtraAttributes
+  ? Record<never, never>
+  : Partial<SafeAttributes<ExtraAttributes, Profile>>;
+
+/** Attributes available to a logger before attributes from an individual log call. */
+export type LoggerContext<
+  ExtraAttributes extends object = NoExtraAttributes,
+  Profile extends AnyLoggerProfile = DefaultLoggerProfile,
+> = Readonly<ContextExtraAttributes<ExtraAttributes, Profile> & Profile["base"]>;
+
 type LogMethodArguments<
   ExtraAttributes extends object,
   Profile extends AnyLoggerProfile,
@@ -155,6 +168,8 @@ export interface Logger<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
 > {
+  /** Returns a snapshot of the attributes available before an individual log call. */
+  getContext(): LoggerContext<ExtraAttributes, Profile>;
   /** Returns a new logger with attributes attached to every entry. */
   with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
     attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>> &
@@ -211,10 +226,18 @@ class StructuredLogger<
     this.#attributes = { ...attributes } as AttachedAttributes<ExtraAttributes, Profile>;
     this.#transport = transport;
     this.#readContext = readContext;
+    this.getContext = this.getContext.bind(this);
     this.debug = this.debug.bind(this);
     this.info = this.info.bind(this);
     this.warn = this.warn.bind(this);
     this.error = this.error.bind(this);
+  }
+
+  getContext(): LoggerContext<ExtraAttributes, Profile> {
+    return {
+      ...this.#getAttributes(),
+      ...this.#base,
+    } as unknown as LoggerContext<ExtraAttributes, Profile>;
   }
 
   with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
@@ -251,13 +274,19 @@ class StructuredLogger<
     attributes: LogAttributes<ExtraAttributes, Profile> | undefined,
   ): void {
     const entry = {
-      ...this.#readContext(),
-      ...this.#attributes,
+      ...this.#getAttributes(),
       ...attributes,
       ...this.#base,
       message,
     } as LogEntry<ExtraAttributes, Profile>;
     this.#transport(level, entry);
+  }
+
+  #getAttributes(): Readonly<object> {
+    return {
+      ...this.#readContext(),
+      ...this.#attributes,
+    };
   }
 }
 

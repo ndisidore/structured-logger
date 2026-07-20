@@ -50,6 +50,30 @@ describe("ALS logger context", () => {
     expect(entries[1]).not.toHaveProperty("requestId");
   });
 
+  it("returns ambient, attached, and base attributes with logging precedence", () => {
+    const logger = als.createLogger<ExtraAttributes>({ component: "api" });
+    const child = logger.with({ operation: "attached" });
+
+    expect(child.getContext()).toEqual({ component: "api", operation: "attached" });
+
+    logger.withLogContext({ operation: "ambient", requestId: "outer" }, () => {
+      expect(child.getContext()).toEqual({
+        component: "api",
+        operation: "attached",
+        requestId: "outer",
+      });
+      child.withLogContext({ requestId: "inner" }, () => {
+        expect(child.getContext()).toEqual({
+          component: "api",
+          operation: "attached",
+          requestId: "inner",
+        });
+      });
+    });
+
+    expect(child.getContext()).toEqual({ component: "api", operation: "attached" });
+  });
+
   it("shares context across a logger lineage", () => {
     const entries: Array<Record<string, unknown>> = [];
     const logger = als.createLogger<ExtraAttributes>({ component: "api" }, (_level, entry) => {
@@ -112,6 +136,8 @@ describe("ALS logger context", () => {
     expect(() => firstChild.withLogContext({ requestId: "req-3" }, () => undefined)).toThrow(
       "Logger context has been disposed",
     );
+    expect(first.getContext()).toEqual({ component: "first" });
+    expect(firstChild.getContext()).toEqual({ component: "first", operation: "child" });
     expect(entries).toEqual([
       { component: "first", message: "after disposal", operation: "after" },
       { component: "second", message: "still active", requestId: "req-2" },

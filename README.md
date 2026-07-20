@@ -58,6 +58,20 @@ Entries are merged in this order, with later values winning:
 
 `.with()` returns a new logger and does not modify its parent.
 
+Call `getContext()` to inspect the attributes available before an individual log call:
+
+```ts
+const requestLogger = logger.with({ requestId: "req-1" });
+
+requestLogger.getContext();
+// { component: "api", environment: "production", requestId: "req-1" }
+```
+
+The returned context uses the same precedence as logging: ambient ALS context, then `.with()`
+attributes, then fixed base attributes. It does not include attributes supplied to a later log call,
+profile call attributes such as `event`, or `message`. Each invocation returns a new shallow,
+readonly snapshot; nested values retain their original references.
+
 ## Transports
 
 The default transport calls `console[level](entry)`. Pass a synchronous transport as the optional
@@ -184,6 +198,8 @@ Root loggers also implement `Symbol.dispose`, so explicit resource management is
 Loggers derived with `.with()` share their root's storage but do not own or expose its disposal.
 Disposal is idempotent, immediately removes ambient context from the entire lineage, and prevents
 later `withLogContext()` calls. Explicit logging and `.with()` remain usable without ambient context.
+`getContext()` also remains usable and returns `.with()` and fixed base attributes without ambient
+context.
 Independent roots, including roots created by the same factory, must be disposed independently.
 
 ALS follows asynchronous resources rather than lexical braces. Unawaited promises, timers, or other

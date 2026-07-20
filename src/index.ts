@@ -22,6 +22,7 @@ export type {
   Logger,
   LoggerAttributes,
   LoggerBase,
+  LoggerContext,
   LoggerFactory,
   LoggerProfile,
   LogValue,

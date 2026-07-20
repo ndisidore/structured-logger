@@ -6,6 +6,7 @@ import {
   type LogAttributes,
   type LogEntry,
   type Logger,
+  type LoggerContext,
   type LoggerProfile,
   type Transport,
 } from "../src/index.js";
@@ -34,6 +35,13 @@ logger.with({ readonlyTags: ["api"] as const });
 logger.with({ metadata: { attempt: 1, nested: { ok: true } } });
 const unsafeAttributes = { token: "secret" };
 const misspelledAttributes = { durationMs: 12, duratonMs: 12 };
+const loggerContext: LoggerContext<ExtraAttributes> = logger.getContext();
+loggerContext.component.toUpperCase();
+loggerContext.requestId?.toUpperCase();
+// @ts-expect-error context snapshots are readonly
+loggerContext.requestId = "req-2";
+// @ts-expect-error per-call profile attributes are not part of logger context
+void loggerContext.event;
 
 // @ts-expect-error unknown attributes are rejected
 logger.info("misspelled", { duratonMs: 12 });
@@ -52,6 +60,7 @@ logger.with({ maybeUnsupported: "valid" });
 
 const strictLogger = createLogger({ component: "api" });
 strictLogger.info("valid");
+strictLogger.getContext().component.toUpperCase();
 // @ts-expect-error undeclared attributes are rejected without a generic
 strictLogger.with({ requestId: "req-1" });
 // @ts-expect-error undeclared call attributes are rejected without a generic
@@ -65,6 +74,9 @@ export type IncompleteProfile = LoggerProfile<{ service: string }>;
 
 type AuditProfile = LoggerProfile<{ service: string }, { action: string; failure?: unknown }>;
 const audit = createLogger<{ actor: string; token: string }, AuditProfile>({ service: "billing" });
+const auditContext: LoggerContext<{ actor: string }, AuditProfile> = audit.getContext();
+auditContext.service.toUpperCase();
+auditContext.actor?.toUpperCase();
 audit.info("valid", { action: "charge.created", actor: "customer-1" });
 // @ts-expect-error custom profiles with required attributes need a second argument
 audit.info("missing attributes");
@@ -116,6 +128,8 @@ dictionaryLogger.info("component", { component: "replacement" });
 dictionaryLogger.with({ event: "dictionary.event" });
 
 const alsLogger = als.createLogger<ExtraAttributes>({ component: "api" });
+const alsContext: als.LoggerContext<ExtraAttributes> = alsLogger.getContext();
+alsContext.component.toUpperCase();
 alsLogger.withLogContext({ requestId: "req-1" }, () => undefined);
 const alsChild: als.ContextLogger<ExtraAttributes> = alsLogger.with({ requestId: "req-1" });
 // @ts-expect-error factory context is restricted to its declared attributes

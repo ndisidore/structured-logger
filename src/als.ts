@@ -26,6 +26,7 @@ export type {
   Logger,
   LoggerAttributes,
   LoggerBase,
+  LoggerContext,
   LoggerFactory,
   LoggerProfile,
   LogValue,
@@ -80,6 +81,7 @@ function withContext<ExtraAttributes extends object, Profile extends AnyLoggerPr
   lineage: ContextLineage,
 ): ContextLogger<ExtraAttributes, Profile> {
   return {
+    getContext: logger.getContext.bind(logger),
     debug: logger.debug.bind(logger),
     info: logger.info.bind(logger),
     warn: logger.warn.bind(logger),
