@@ -35,9 +35,11 @@ export interface ContextLogger<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
 > extends Logger<ExtraAttributes, Profile> {
+  /** Returns a new logger with attributes attached while retaining this logger's context store. */
   with<Attributes extends LogContext<ExtraAttributes, Profile>>(
     attributes: Exact<Attributes, LogContext<ExtraAttributes, Profile>>,
   ): ContextLogger<ExtraAttributes, Profile>;
+  /** Runs a callback with ambient attributes available to this logger lineage. */
   withLogContext<Attributes extends LogContext<ExtraAttributes, Profile>, Result>(
     attributes: Exact<Attributes, LogContext<ExtraAttributes, Profile>>,
     callback: () => Result,
@@ -48,6 +50,7 @@ export interface ContextLoggerFactory<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
 > extends LoggerFactory<ExtraAttributes, Profile> {
+  /** Creates a context-aware logger with an independent context store. */
   createLogger<Base extends LoggerBase<Profile>>(
     base: Exact<Base, LoggerBase<Profile>>,
   ): ContextLogger<ExtraAttributes, Profile>;
@@ -68,6 +71,7 @@ function withContext<ExtraAttributes extends object, Profile extends AnyLoggerPr
   };
 }
 
+/** Creates a structured logger backed by an independent `AsyncLocalStorage` context. */
 export function createLogger<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
@@ -83,6 +87,7 @@ export function createLogger<
   );
 }
 
+/** Creates context-aware loggers that share a transport but keep independent context stores. */
 export function createLoggerFactory<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,

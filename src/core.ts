@@ -120,6 +120,7 @@ type LogMethod<ExtraAttributes extends object, Profile extends AnyLoggerProfile>
   ...args: LogMethodArguments<ExtraAttributes, Profile, Attributes>
 ) => void;
 
+/** Receives each completed log entry synchronously. */
 export type Transport<Entry extends object = object> = (
   level: LogLevel,
   entry: Readonly<Entry>,
@@ -135,12 +136,17 @@ export interface Logger<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
 > {
+  /** Returns a new logger with attributes attached to every entry. */
   with<Attributes extends AttachedAttributes<ExtraAttributes, Profile>>(
     attributes: Exact<Attributes, AttachedAttributes<ExtraAttributes, Profile>>,
   ): Logger<ExtraAttributes, Profile>;
+  /** Writes a debug-level entry. */
   debug: LogMethod<ExtraAttributes, Profile>;
+  /** Writes an info-level entry. */
   info: LogMethod<ExtraAttributes, Profile>;
+  /** Writes a warning-level entry. */
   warn: LogMethod<ExtraAttributes, Profile>;
+  /** Writes an error-level entry. */
   error: LogMethod<ExtraAttributes, Profile>;
 }
 
@@ -148,6 +154,7 @@ export interface LoggerFactory<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
 > {
+  /** Creates a logger using this factory's transport and attribute profile. */
   createLogger<Base extends LoggerBase<Profile>>(
     base: Exact<Base, LoggerBase<Profile>>,
   ): Logger<ExtraAttributes, Profile>;
@@ -160,6 +167,7 @@ export type LogContext<
 
 type ContextReader = () => Readonly<object> | undefined;
 
+/** Writes each entry to the console method matching its log level. */
 export const consoleTransport: Transport = (level, entry) => {
   console[level](entry);
 };

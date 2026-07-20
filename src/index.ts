@@ -31,6 +31,7 @@ export { consoleTransport } from "./core.js";
 
 const noContext = () => undefined;
 
+/** Creates an immutable structured logger with explicit attributes and no ambient async context. */
 export function createLogger<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
@@ -42,6 +43,7 @@ export function createLogger<
   return createLoggerWithContext(base, transport, noContext);
 }
 
+/** Creates loggers that share a transport and attribute profile. */
 export function createLoggerFactory<
   ExtraAttributes extends object = NoExtraAttributes,
   Profile extends AnyLoggerProfile = DefaultLoggerProfile,
